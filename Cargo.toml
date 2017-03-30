@@ -1,0 +1,6 @@
+[package]
+name = "lazyrs"
+version = "0.1.0"
+authors = ["Nick Ippoliti <nickippoliti@protonmail.com>"]
+
+[dependencies]
