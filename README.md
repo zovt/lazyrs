@@ -1,0 +1,2 @@
+# lazyrs
+Lazy Rust
