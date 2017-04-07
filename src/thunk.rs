@@ -1,36 +1,80 @@
-use std::ops::Add;
-
-#[derive(Debug, Clone)]
-pub struct Thunk<A, F>
-where A: Sized, F: FnOnce() -> A {
-    provider: Option<F>,
-    value: Option<A>,
-}
-
-impl<A, F> Thunk<A, F>
-where A: Sized, F: FnOnce() -> A {
-    pub fn new(f: F) -> Self {
-        Thunk {
-            provider: Some(f),
-            value: None,
+pub trait Thunk {
+    type Item;
+    
+    fn eval(self) -> Self::Item;
+    
+    fn map<U, F: FnOnce(Self::Item) -> U>(self, f: F) -> Map<Self, F> 
+        where Self: Sized,
+    {
+        Map {
+            thunk: self,
+            transformation: f,
         }
     }
     
-    pub fn eval(&mut self) -> &A {
-        match self.provider.take() {
-            Some(f) => self.value = Some(f()),
-            None => (),
-        };
-        
-        self.value.as_ref().unwrap()
+    fn combine<T: Thunk, U, F: FnOnce(Self::Item, T::Item) -> U>(self, t: T, f: F) -> Combine<Self, T, F>
+        where Self: Sized,
+    {
+        Combine {
+            t1: self,
+            t2: t,
+            combinator: f
+        }
     }
 }
 
-pub fn add<'a, A, F>(a: &'a Thunk<A, F>, b: Thunk<A, F>) -> Thunk<A::Output, impl FnOnce() -> A::Output>
-where A: Sized + Add, F: FnOnce() -> A {
-    let f = |&'mut 
-    Thunk::new(|| {
-        *a.eval() + *b.eval()
-    })
+pub struct Combine<T, U, F> {
+    t1: T,
+    t2: U,
+    combinator: F,
+}
+    
+impl<T, U, V, F> Thunk for Combine<T, U, F>
+where T: Thunk,
+      U: Thunk,
+      F: FnOnce(T::Item, U::Item) -> V,
+{
+    type Item = V;
+    
+    fn eval(self) -> Self::Item {
+        (self.combinator)(self.t1.eval(), self.t2.eval())
+    }
 }
 
+pub struct ThunkOnce<T, F>
+where F: FnOnce() -> T {
+    prod: F,
+}
+
+impl<T, F> ThunkOnce<T, F>
+where F: FnOnce() -> T {
+    pub fn new(f: F) -> Self {
+        ThunkOnce {
+            prod: f,
+        }
+    }
+}
+
+impl<T, F> Thunk for ThunkOnce<T, F>
+where F: FnOnce() -> T {
+    type Item = T;
+    
+    fn eval(self) -> Self::Item {
+        (self.prod)()
+    }
+}
+
+pub struct Map<T, F> {
+    transformation: F,
+    thunk: T,
+}
+
+impl<T, U, F> Thunk for Map<T, F>
+where T: Thunk,
+      F: FnOnce(T::Item) -> U {
+    type Item = U;
+    
+    fn eval(self) -> Self::Item {
+        (self.transformation)(self.thunk.eval())
+    }
+}
