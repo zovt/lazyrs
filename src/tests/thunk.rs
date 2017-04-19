@@ -8,7 +8,7 @@ pub fn test_basic_thunkage() {
         1 + 1
     });
     
-    assert_eq!(a.eval(), 2)
+    assert_eq!(a.eval_once(), 2)
 }
 
 #[test]
@@ -22,13 +22,5 @@ pub fn test_map() {
     });
     println!("first");
     
-    assert_eq!("8".to_string(), a.eval())
-}
-
-#[test]
-pub fn test_combine() {
-    let b = ThunkOnce::new(|| { 10 });
-    let a = ThunkOnce::new(|| { 8 }).combine(b, Add::add);
-    
-    assert_eq!(18, a.eval())
+    assert_eq!("8".to_string(), a.eval_once())
 }

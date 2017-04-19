@@ -1,80 +1,116 @@
-pub trait Thunk {
+pub trait ThunkOwned {
     type Item;
-    
-    fn eval(self) -> Self::Item;
-    
-    fn map<U, F: FnOnce(Self::Item) -> U>(self, f: F) -> Map<Self, F> 
-        where Self: Sized,
-    {
+    fn eval_once(self) -> Self::Item;
+
+    fn map<O, U: FnOnce(Self::Item) -> O>(self, f: U) -> Map<Self, Self::Item, U, O>
+    where Self: Sized {
         Map {
             thunk: self,
-            transformation: f,
-        }
-    }
-    
-    fn combine<T: Thunk, U, F: FnOnce(Self::Item, T::Item) -> U>(self, t: T, f: F) -> Combine<Self, T, F>
-        where Self: Sized,
-    {
-        Combine {
-            t1: self,
-            t2: t,
-            combinator: f
+            transform: f,
         }
     }
 }
 
-pub struct Combine<T, U, F> {
-    t1: T,
-    t2: U,
-    combinator: F,
+pub trait Thunk : ThunkOwned {
+    fn eval(&mut self) -> Self::Item;
 }
-    
-impl<T, U, V, F> Thunk for Combine<T, U, F>
-where T: Thunk,
-      U: Thunk,
-      F: FnOnce(T::Item, U::Item) -> V,
-{
-    type Item = V;
-    
-    fn eval(self) -> Self::Item {
-        (self.combinator)(self.t1.eval(), self.t2.eval())
-    }
+
+pub trait ThunkRef : Thunk {
+    fn eval_ref(&mut self) -> &Self::Item;
 }
+
+/*
+pub trait ThunkMut : ThunkRef {
+    fn mutate<F: FnOnce(Self::Item) -> Self::Item>(&mut self, f: F);
+}
+ */
 
 pub struct ThunkOnce<T, F>
-where F: FnOnce() -> T {
-    prod: F,
+    where F: FnOnce() -> T {
+    gen: F,
 }
 
 impl<T, F> ThunkOnce<T, F>
-where F: FnOnce() -> T {
+    where F: FnOnce() -> T {
     pub fn new(f: F) -> Self {
         ThunkOnce {
-            prod: f,
+            gen: f,
         }
     }
 }
 
-impl<T, F> Thunk for ThunkOnce<T, F>
-where F: FnOnce() -> T {
+impl<T, F> ThunkOwned for ThunkOnce<T, F>
+    where F: FnOnce() -> T, T: Sized {
     type Item = T;
-    
-    fn eval(self) -> Self::Item {
-        (self.prod)()
+
+    fn eval_once(self) -> Self::Item {
+        (self.gen)()
     }
 }
 
-pub struct Map<T, F> {
-    transformation: F,
-    thunk: T,
+pub struct ThunkCached<T, F>
+    where F: FnOnce() -> T, T: Sized {
+    gen: Option<F>,
+    res: Option<T>,
 }
 
-impl<T, U, F> Thunk for Map<T, F>
-where T: Thunk,
-      F: FnOnce(T::Item) -> U {
-    type Item = U;
-    
-    fn eval(self) -> Self::Item {
-        (self.transformation)(self.thunk.eval())
+impl<T, F> ThunkCached<T, F>
+    where F: FnOnce() -> T, T: Sized {
+    pub fn new(f: F) -> Self {
+        ThunkCached {
+            gen: Some(f),
+            res: None,
+        }
+    }
+}
+
+
+impl<T, F> ThunkOwned for ThunkCached<T, F>
+    where F: FnOnce() -> T, T: Sized + Copy {
+    type Item = T;
+
+    fn eval_once(mut self) -> Self::Item {
+        self.eval()
+    }
+}
+
+impl<T, F> Thunk for ThunkCached<T, F>
+    where F: FnOnce() -> T, T: Sized + Copy {
+
+    fn eval(&mut self) -> Self::Item {
+        match self.gen.take() {
+            Some(f) => self.res = Some(f()),
+            None => (),
+        };
+
+        self.res.unwrap()
+    }
+}
+
+impl<T, F> ThunkRef for ThunkCached<T, F>
+    where F: FnOnce() -> T, T: Sized + Copy {
+
+    fn eval_ref(&mut self) -> &Self::Item {
+        match self.gen.take() {
+            Some(f) => self.res = Some(f()),
+            None => (),
+        };
+
+        self.res.as_ref().unwrap()
+    }
+}
+
+pub struct Map<H, T, U, O>
+    where H: ThunkOwned<Item = T>, U: FnOnce(H::Item) -> O {
+    thunk: H,
+    transform: U,
+}
+
+impl<H, T, U, O> ThunkOwned for Map<H, T, U, O>
+    where H: ThunkOwned<Item = T>, U: FnOnce(H::Item) -> O {
+    type Item = O;
+
+    fn eval_once(self) -> Self::Item {
+        (self.transform)(self.thunk.eval_once())
     }
 }
